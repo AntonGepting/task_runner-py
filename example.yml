@@ -1,0 +1,53 @@
+# program to use with given name and CLI parameters
+exec:
+  # rsync as command for sync
+  #cmd: "rsync"
+  cmd: "echo"
+
+  # CLI parameters for given command
+  flags:
+    - "--archive"
+    - "--progress"
+    - "--verbose"
+    - "--delete"
+
+# remote server with ssh
+dst:
+  # ssh user
+  user: "root"
+  # IP or hostname of remote server
+  host: "192.168.0.1"
+
+tasks:
+    # first task as parent task
+    #  cmd will be not executed (because both src and dst needed)
+    #  dst will be used for child tasks
+  - user:
+    dst:
+      path: "/mnt/remote_hdd0/backup/home/user/"
+
+    # child tasks
+    tasks:
+
+        # child task, dst of the parent will be used
+      - Documents:
+        src:
+          path: "/home/user/Documents"
+
+        # child task, dst of the parent will be used
+      - Music:
+        src:
+          path: "/mnt/local_hdd0/home/user/Music"
+
+        # child task, dst of the parent will be used
+      - Videos:
+        src:
+          path: "/mnt/local_hdd0/home/user/Videos"
+
+    # second task
+  - library:
+    src:
+      path: "/mnt/local_hdd1/library"
+    dst:
+      path: "/mnt/remote_hdd1/"
+
