@@ -4,37 +4,20 @@ import sys, os, argparse
 import subprocess
 import yaml
 
-# CLI consts
-PROGRAM_NAME = 'task runner, command wrapper'
-PROGRAM_DESCRIPTION = 'use tasks file'
-PROGRAM_EPILOG = ''
-TASKS_FILE_DEFAULT = 'tasks.yml'
-
-# YAML task file consts
-USER_KEY = 'user'
-HOST_KEY = 'host'
-PATH_KEY = 'path'
-SRC_KEY = 'src'
-DST_KEY = 'dst'
-PROG_KEY = 'prog'
-CMD_KEY = 'cmd'
-FLAGS_KEY = 'flags'
-TASKS_KEY = 'tasks'
-
 
 # concat user + '@' + host + ':' + path
 def create_path(params):
     host = ''
-    if params[HOST_KEY] is not None:
-        host = params[HOST_KEY] + ':'
+    if params['host'] is not None:
+        host = params['host'] + ':'
 
     user = ''
-    if params[USER_KEY] is not None:
-        user = params[USER_KEY] + '@'
+    if params['user'] is not None:
+        user = params['user'] + '@'
 
     path = ''
-    if params[PATH_KEY] is not None:
-        path = params[PATH_KEY]
+    if params['path'] is not None:
+        path = params['path']
 
     result = user + host + path
 
@@ -44,14 +27,15 @@ def create_path(params):
 # exec command
 def run_command(params, dry_run, verbose):
 
-    src = create_path(params[SRC_KEY])
-    dst = create_path(params[DST_KEY])
+    src = create_path(params['src'])
+    dst = create_path(params['dst'])
 
     if verbose:
-        print([params[CMD_KEY], src, dst] + params[FLAGS_KEY])
+        print([params['cmd'], src, dst] + params['flags'])
 
     if not dry_run:
-        subprocess.run([params[CMD_KEY], src, dst] + params[FLAGS_KEY])
+        print([params['cmd'], src, dst] + params['flags'])
+        # subprocess.run([params['cmd'], src, dst] + params['flags'])
 
 
 # use parent task host user and path
@@ -59,18 +43,18 @@ def inherit_path(task, key, params):
     if key in task.keys():
         if isinstance(task[key], dict):
             # accept given or use parent's target
-            if HOST_KEY in task[key].keys():
-                params[key][HOST_KEY] = task[key][HOST_KEY]
+            if 'host' in task[key].keys():
+                params[key]['host'] = task[key]['host']
 
-            if USER_KEY in task[key].keys():
-                params[key][USER_KEY] = task[key][USER_KEY]
+            if 'user' in task[key].keys():
+                params[key]['user'] = task[key]['user']
 
-            if PATH_KEY in task[key].keys():
-                params[key][PATH_KEY] = task[key][PATH_KEY]
+            if 'path' in task[key].keys():
+                params[key]['path'] = task[key]['path']
 
-        # if isinstance(task[DST_KEY], list):
+        # if isinstance(task['dst'], list):
         if isinstance(task[key], str):
-            params[key][PATH_KEY] = task[key]
+            params[key]['path'] = task[key]
 
 
 # use parent task parameters if current are empty
@@ -78,65 +62,96 @@ def init_task_params(parent_params, task):
     params = parent_params
 
     # accept given or use parent's src
-    inherit_path(task, SRC_KEY, params)
+    inherit_path(task, 'src', params)
 
     # accept given or use parent's dst
-    inherit_path(task, DST_KEY, params)
+    inherit_path(task, 'dst', params)
 
     # accept given or use parent's run
-    if PROG_KEY in task.keys():
+    if 'prog' in task.keys():
         # accept given or use parent's cmd
-        if CMD_KEY in task[PROG_KEY].keys():
-            params[CMD_KEY] = task[PROG_KEY][CMD_KEY]
+        if 'cmd' in task['prog'].keys():
+            params['cmd'] = task['prog']['cmd']
         # accept given or use parent's flags
-        if FLAGS_KEY in task[PROG_KEY].keys():
-            params[FLAGS_KEY] = task[PROG_KEY][FLAGS_KEY]
+        if 'flags' in task['prog'].keys():
+            params['flags'] = task['prog']['flags']
 
     return params
 
 
-# function for recursive use of task parameters
-#
-# Parameters:
-#  parent_params: dict contains inherited params
-#  task: dict contains current task
-#  dry_run (bool): do not run, just simulate
-#  verbose (bool): verbose output
-#
-def run_task(parent_params, task, dry_run, verbose):
-    # init params using current and parent task
-    params = init_task_params(parent_params, task)
+class Task:
 
-    # run if all required params are given
-    if params[CMD_KEY] is not None:
-        if params[FLAGS_KEY] is not None:
-            if params[SRC_KEY][PATH_KEY] is not None:
-                if params[DST_KEY][PATH_KEY] is not None:
-                    run_command(params, dry_run, verbose)
+    # create default
+    def __init__(self, task):
+        self.task = task
 
-    # if child tasks are existing
-    if TASKS_KEY in task.keys():
-        tasks = task[TASKS_KEY]
-
-        # recursive run for each child task
-        for task in task[TASKS_KEY]:
-            run_task(params, task, dry_run, verbose)
+    @classmethod
+    def default(cls):
+        params_default = {
+            'cmd': None,
+            'flags': None,
+            'src': {
+                'host': None,
+                'user': None,
+                'path': None,
+            },
+            'dst': {
+                'host': None,
+                'user': None,
+                'path': None,
+            },
+        }
+        return cls(params_default)
 
 
-# read tasks
-def read_tasks_file(tasks_filename):
-    # open tasks yml file
-    with tasks_filename as f:
-        data = yaml.load(f, Loader=yaml.FullLoader)
-        return data
+
+    # read tasks from YAML file
+    @classmethod
+    def read_from_yaml(cls, tasks_filename):
+        # open tasks yml file
+        with tasks_filename as f:
+            task = yaml.load(f, Loader=yaml.FullLoader)
+            return cls(task)
+
+    def print(self):
+        print(self.task)
+
+    # function for recursive use of task parameters
+    #
+    # Parameters:
+    #  parent_params: dict contains inherited params
+    #  task: dict contains current task
+    #  dry_run (bool): do not run, just simulate
+    #  verbose (bool): verbose output
+    #
+    def run(self, parent_task, dry_run, verbose):
+        # init params using current and parent task
+        current_task = init_task_params(parent_task, self.task)
+
+        # run if all required params are given
+        if current_task['cmd'] is not None:
+            if current_task['flags'] is not None:
+                if current_task['src']['path'] is not None:
+                    if current_task['dst']['path'] is not None:
+                        run_command(current_task, dry_run, verbose)
+
+        # if child tasks are existing
+        if 'tasks' in self.task.keys():
+            tasks = self.task['tasks']
+
+            # recursive run for each child task
+            for task in self.task['tasks']:
+                task.run(current_task, dry_run, verbose)
+
+
 
 
 # create CLI arguments
 def create_args():
     parser = argparse.ArgumentParser(
-                        prog=PROGRAM_NAME,
-                        description=PROGRAM_DESCRIPTION,
-                        epilog=PROGRAM_EPILOG)
+                        prog='task runner, command wrapper',
+                        description='use tasks file',
+                        epilog='')
     # print tasks
     # parser.add_argument('-p',
                         # '--print-tasks',
@@ -155,7 +170,7 @@ def create_args():
     parser.add_argument('tasks',
                         type=argparse.FileType('r'),
                         help='tasks file (default: tasks.yml)')
-                        # default=TASKS_FILE_DEFAULT
+                        # default='tasks.yml'
                         # nargs='?',
                         # default=sys.stdin
                         # type=string
@@ -168,24 +183,14 @@ def use_args(args):
     if args.verbose:
         print(f'reading tasks file {args.tasks.name} ...')
 
-    data = read_tasks_file(args.tasks)
+    task = Task.read_from_yaml(args.tasks)
+    #task.print()
 
-    params_default = {
-        CMD_KEY: None,
-        FLAGS_KEY: None,
-        SRC_KEY: {
-            HOST_KEY: None,
-            USER_KEY: None,
-            PATH_KEY: None,
-        },
-        DST_KEY: {
-            HOST_KEY: None,
-            USER_KEY: None,
-            PATH_KEY: None,
-        },
-    }
+    params_default = Task.default()
+    #params_default.print()
 
-    run_task(params_default, data, args.dry_run, args.verbose)
+    task.run(params_default.task, args.dry_run, args.verbose)
+    # run_task(params_default, data, args.dry_run, args.verbose)
 
 
 
